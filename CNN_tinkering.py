@@ -123,38 +123,84 @@ test_y = y[-val_size:]
 # print(len(train_X))
 # print(len(test_X))
 
-BATCH_SIZE = 100
-EPOCHS = 1
 
-for epoch in range(EPOCHS):
-    for i in tqdm(range(0, len(train_X), BATCH_SIZE)):
-        # print(i, i+BATCH_SIZE)
-        batch_X = train_X[i: i+BATCH_SIZE].view(-1, 1, 50, 50)
-        batch_y = train_y[i: i+BATCH_SIZE]
+def train(net):
+    BATCH_SIZE = 100
+    EPOCHS = 1
 
+    # Training the CNN
+    for epoch in range(EPOCHS):
+        loss, in_sample_acc = 0, 0
+        for i in tqdm(range(0, len(train_X), BATCH_SIZE)):
+            # print(i, i+BATCH_SIZE)
+            batch_X = train_X[i: i+BATCH_SIZE].view(-1, 1, 50, 50)
+            batch_y = train_y[i: i+BATCH_SIZE]
+
+            net.zero_grad()
+            outputs = net(batch_X)
+
+            matches = [torch.argmax(i) == torch.argmax(j) for i, j in zip(outputs, batch_y)]
+            in_sample_acc = matches.count(True) / len(matches)
+
+            loss = loss_function(outputs, batch_y)
+            loss.backward()
+
+            # Does the update
+            optimizer.step()
+
+        print(loss)
+        print("In-sample acc: ", round(in_sample_acc, 2))
+
+
+def test(net):
+    correct = 0
+    total = 0
+
+    # Testing the CNN
+    with torch.no_grad():
+        for i in tqdm(range(len(test_X))):
+            real_class = torch.argmax(test_y[i])
+            net_out = net(test_X[i].view(-1, 1, 50, 50))[0]
+            predicted_class = torch.argmax(net_out)
+
+            if predicted_class == real_class:
+                correct += 1
+
+            total += 1
+
+    print("Accuracy: ", round(correct/total, 3))
+
+
+def fwd_pass(X, y, train=False):
+    if train:
         net.zero_grad()
 
-        outputs = net(batch_X)
-        loss = loss_function(outputs, batch_y)
+    outputs = net(X)
 
+    # we want in and out of sample accuracy
+    # In-sample accuracy: This is the accuracy on the data we're actually feeding through the model for training.
+    #                     This is the data that we're "fitting" against
+    # Out-of-sample accuracy: This is the accuracy on data that we've set aside that the model will never see/fit
+    #                         against
+    matches = [torch.argmax(i) == torch.argmax(j) for i, j in zip(outputs, y)]
+    acc = matches.count(True)/len(matches)
+
+    loss = loss_function(outputs, y)
+
+    if train:
         loss.backward()
-
         optimizer.step()
 
-print(loss)
+    return acc, loss
 
-correct = 0
-total = 0
 
-with torch.no_grad():
-    for i in tqdm(range(len(test_X))):
-        real_class = torch.argmax(test_y[i])
-        net_out = net(test_X[i].view(-1, 1, 50, 50))[0]
-        predicted_class = torch.argmax(net_out)
+def test(size=32):
+    random_start = np.random.randint(len(test_X)-size)
+    X, y = test_X[random_start:random_start+size], test_y[random_start:random_start+size]
 
-        if predicted_class == real_class:
-            correct += 1
+    with torch.no_grad():
+        val_acc, val_loss = fwd_pass(X.view(-1, 1, 50, 50), y)
+    return val_acc, val_loss
 
-        total += 1
-
-print("Accuracy: ", round(correct/total, 3))
+val_acc, val_loss = test(size=32)
+print(val_acc, val_loss)
